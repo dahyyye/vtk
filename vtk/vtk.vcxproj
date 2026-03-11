@@ -125,6 +125,12 @@
   <ItemGroup>
     <ClCompile Include="main.cpp" />
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Bvh.h" />
+    <ClInclude Include="ObjLoader.h" />
+    <ClInclude Include="Voxelizer.h" />
+    <ClInclude Include="VTKWriter.h" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
