@@ -1,39 +1,67 @@
-#pragma once
+ï»¿#pragma once
 #include "Bvh.h"
 #include <vector>
 #include <algorithm>
-#include <cstdint>
 #include <functional>
 #include <cmath>
 
-// ¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //  SDF Voxelizer
 //
-//  For each voxel:
-//   1. BVH nearest-point query  ¡æ unsigned distance to surface
-//   2. Parity ray test (+X ray) ¡æ sign  (negative = inside)
+//  ë¶€í˜¸ ê²°ì •:
+//   1ì°¨) Angle-weighted pseudonormal (BVH.signAt)
+//        face / edge / vertex ì¼€ì´ìŠ¤ ëª¨ë‘ ì²˜ë¦¬
+//   2ì°¨) dot â‰ˆ 0ì¸ í‡´í™” ì¼€ì´ìŠ¤ â†’ 6ë°©í–¥ ë‹¤ìˆ˜ê²° íŒ¨ë¦¬í‹°
 //
-//  Output: Float32 signed distance field  (same as Torus_128.vti)
-// ¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡
+//  ì‚¬í›„ ì²˜ë¦¬:
+//   - ë¶€í˜¸ ì¼ê´€ì„± ìŠ¤ë¬´ë”© (3Ã—3Ã—3 ì´ì›ƒ ë‹¤ìˆ˜ê²°)
+//     â†’ ê³ ë¦½ëœ sign-flip ì•„í‹°íŒ©íŠ¸ ì œê±°
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-// Returns true if point is inside mesh (odd parity along +X)
-static bool isInside(const Vec3& p, const BVH& bvh) {
-    Vec3 dir = { 1.f, 0.f, 0.f };
-    Vec3 orig = { p.x - 1e4f, p.y, p.z };  // start far left
+// íŒ¨ë¦¬í‹° í…ŒìŠ¤íŠ¸ (ë°©í–¥ í•˜ë‚˜)
+static bool parityTest(const Vec3& p, const Vec3& dir, const BVH& bvh) {
     std::vector<float> hits;
-    bvh.collectHits(orig, dir, 0.f, hits);
-
-    // Deduplicate near-coincident hits
+    bvh.collectHits(p, dir, 1e-5f, hits);
     std::sort(hits.begin(), hits.end());
     std::vector<float> deduped;
     for (float h : hits)
         if (deduped.empty() || h - deduped.back() > 1e-4f)
             deduped.push_back(h);
+    return (deduped.size() & 1) != 0;
+}
 
-    // Count hits that fall before our point
-    float dist = p.x - orig.x;
-    int cnt = (int)(std::lower_bound(deduped.begin(), deduped.end(), dist) - deduped.begin());
-    return (cnt & 1) != 0;
+// 6ë°©í–¥ ë‹¤ìˆ˜ê²° íŒ¨ë¦¬í‹° (Â±X, Â±Y, Â±Z)
+static bool parityVote(const Vec3& p, const BVH& bvh) {
+    int cnt = 0;
+    if (parityTest(p, { 1,0,0 }, bvh)) ++cnt;
+    if (parityTest(p, { -1,0,0 }, bvh)) ++cnt;
+    if (parityTest(p, { 0, 1,0 }, bvh)) ++cnt;
+    if (parityTest(p, { 0,-1,0 }, bvh)) ++cnt;
+    if (parityTest(p, { 0,0, 1 }, bvh)) ++cnt;
+    if (parityTest(p, { 0,0,-1 }, bvh)) ++cnt;
+    return cnt >= 4;
+}
+
+// ë¶€í˜¸ ì¼ê´€ì„± ìŠ¤ë¬´ë”©: 3Ã—3Ã—3 ì´ì›ƒì˜ ë¶€í˜¸ ë‹¤ìˆ˜ê²°ë¡œ ê³ ë¦½ëœ ì˜¤ë¥˜ ì œê±°
+static void smoothSigns(std::vector<float>& vol, int res) {
+    std::vector<float> out = vol;
+    for (int iz = 1; iz < res - 1; ++iz)
+        for (int iy = 1; iy < res - 1; ++iy)
+            for (int ix = 1; ix < res - 1; ++ix) {
+                size_t c = (size_t)ix + (size_t)iy * res + (size_t)iz * res * res;
+                int neg = 0, pos = 0;
+                for (int dz = -1; dz <= 1; ++dz)
+                    for (int dy = -1; dy <= 1; ++dy)
+                        for (int dx = -1; dx <= 1; ++dx) {
+                            size_t nb = (size_t)(ix + dx) + (size_t)(iy + dy) * res + (size_t)(iz + dz) * res * res;
+                            if (vol[nb] < 0) ++neg; else ++pos;
+                        }
+                // ìì‹ ê³¼ ë‹¤ë¥¸ ë°©í–¥ì´ ì••ë„ì ì´ë©´ í”Œë¦½
+                float absDist = std::abs(vol[c]);
+                if (vol[c] < 0 && pos>23) out[c] = absDist; // 27ê°œ ì´ì›ƒ ì¤‘ 24ê°œ ì´ìƒì´ ì–‘ìˆ˜
+                if (vol[c] > 0 && neg > 23) out[c] = -absDist;
+            }
+    vol = std::move(out);
 }
 
 inline std::vector<float> voxelize(
@@ -44,7 +72,6 @@ inline std::vector<float> voxelize(
 {
     std::vector<float> vol(static_cast<size_t>(res) * res * res, 0.f);
 
-    // Padded bounds
     Vec3  bmin = mesh.bmin, bmax = mesh.bmax;
     float maxExt = 0.f;
     for (int i = 0; i < 3; ++i) maxExt = std::max(maxExt, bmax[i] - bmin[i]);
@@ -64,19 +91,28 @@ inline std::vector<float> voxelize(
 
             for (int ix = 0; ix < res; ++ix) {
                 float wx = bmin.x + (ix + 0.5f) * dx;
-                Vec3 p = { wx, wy, wz };
+                Vec3 p = { wx,wy,wz };
 
-                // Unsigned distance to nearest surface point
-                float distSq = bvh.nearestDistSq(p);
+                int   closestTri = -1;
+                float distSq = bvh.nearestDistSq(p, closestTri);
                 float dist = std::sqrt(distSq);
 
-                // Sign: negative inside, positive outside
-                if (isInside(p, bvh)) dist = -dist;
+                float s = 1.f;
+                if (closestTri >= 0) {
+                    float dot = bvh.signAt(p, closestTri);
+                    if (dot < -1e-6f) s = -1.f;  // ì•ˆìª½
+                    else if (dot > 1e-6f) s = 1.f;  // ë°”ê¹¥
+                    else s = parityVote(p, bvh) ? -1.f : 1.f; // í‡´í™” ì¼€ì´ìŠ¤
+                }
 
                 size_t idx = (size_t)ix + (size_t)iy * res + (size_t)iz * res * res;
-                vol[idx] = dist;
+                vol[idx] = s * dist;
             }
         }
     }
+
+    // ê³ ë¦½ëœ sign-flip ì•„í‹°íŒ©íŠ¸ ì œê±°
+    smoothSigns(vol, res);
+
     return vol;
 }

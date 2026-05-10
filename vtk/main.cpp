@@ -56,28 +56,16 @@ static int pickResolution() {
     return choices[sel - 1];
 }
 
-int main(int argc, char* argv[]) {
-    std::cout << "====================================\n"
-        << "  OBJ  =>  BVH  =>  VTK Volume Tool\n"
-        << "====================================\n";
-
+static bool runOnce() {
+    // OBJ 경로 입력
     std::string objPath;
-    if (argc >= 2) {
-        objPath = argv[1];
-    }
-    else {
-        std::cout << "\nEnter OBJ file path:\n  > ";
-        std::getline(std::cin >> std::ws, objPath);
-        if (!objPath.empty() && objPath.front() == '"')
-            objPath = objPath.substr(1, objPath.size() - 2);
-    }
+    std::cout << "\nEnter OBJ file path:\n  > ";
+    std::getline(std::cin >> std::ws, objPath);
+    if (!objPath.empty() && objPath.front() == '"')
+        objPath = objPath.substr(1, objPath.size() - 2);
 
-    int res = 0;
-    if (argc >= 3) {
-        try { res = std::stoi(argv[2]); }
-        catch (...) { res = 0; }
-    }
-    if (res <= 0) res = pickResolution();
+    // 해상도 선택
+    int res = pickResolution();
 
     // [1/4] Load OBJ
     Mesh mesh;
@@ -95,7 +83,7 @@ int main(int argc, char* argv[]) {
     }
     catch (const std::exception& e) {
         std::cerr << "\nERROR: " << e.what() << '\n';
-        return 1;
+        return true;  // 에러가 나도 계속 반복
     }
 
     // [2/4] Build BVH
@@ -111,7 +99,7 @@ int main(int argc, char* argv[]) {
     }
     catch (const std::exception& e) {
         std::cerr << "\nERROR: " << e.what() << '\n';
-        return 1;
+        return true;
     }
 
     // [3/4] Voxelize
@@ -125,21 +113,21 @@ int main(int argc, char* argv[]) {
         double sec = std::chrono::duration<double>(
             std::chrono::steady_clock::now() - t0).count();
         long long total_vox = (long long)res * res * res;
-        long long filled = 0;
-        for (float v : vol) if (v < 0.f) ++filled;
+        long long inside = 0;
+        for (float v : vol) if (v < 0.f) ++inside;
         std::cout << "\n       done  (" << std::fixed << std::setprecision(2) << sec << " s)\n"
             << "       Inside ratio: " << std::setprecision(1)
-            << 100.0 * filled / total_vox << " %\n";
+            << 100.0 * inside / total_vox << " %\n";
     }
     catch (const std::exception& e) {
         std::cerr << "\nERROR: " << e.what() << '\n';
-        return 1;
+        return true;
     }
 
-    // [4/4] Write VTK
+    // [4/4] Write VTI
     std::string outPath = fileStem(objPath) + "_" + std::to_string(res) + ".vti";
     try {
-        std::cout << "\n[4/4] Writing VTK ... ";
+        std::cout << "\n[4/4] Writing VTI ... ";
         auto t0 = std::chrono::steady_clock::now();
         writeVTK(outPath, vol, res, mesh);
         double ms = std::chrono::duration<double, std::milli>(
@@ -150,18 +138,26 @@ int main(int argc, char* argv[]) {
     }
     catch (const std::exception& e) {
         std::cerr << "\nERROR: " << e.what() << '\n';
-        return 1;
+        return true;
     }
 
     std::cout << "\n  Output: " << outPath << "\n"
-        << "====================================\n"
-        << "  Done! Open with ParaView or ITK-SNAP.\n"
-        << "====================================\n\n";
+        << "====================================\n";
 
-    if (argc < 2) {
-        std::cout << "Press ENTER to exit...";
-        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-        std::cin.get();
-    }
+    // 계속할지 물어보기
+    std::cout << "  Convert another file? (y/n): ";
+    char ans = 0;
+    std::cin >> ans;
+    return (ans == 'y' || ans == 'Y');
+}
+
+int main() {
+    std::cout << "====================================\n"
+        << "  OBJ  =>  BVH  =>  VTI Volume Tool\n"
+        << "====================================\n";
+
+    while (runOnce()) {}
+
+    std::cout << "\n  Bye!\n";
     return 0;
 }
